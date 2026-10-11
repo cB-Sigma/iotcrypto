@@ -41,6 +41,33 @@ Go's internal package and may change with it.
 | brainpool r1 curves (RFC 5639) | done; RFC 7027 vectors and OpenSSL interop. The t1 (twisted) curves are not |
 | SCRAM-SHA-1, SCRAM-SHA-256 | done, client and server, on github.com/xdg-go/scram; RFC 5802 and RFC 7677 example exchanges reproduced byte for byte; no -PLUS (channel binding) variants, no SASLprep (passwords compared as given) |
 
+## Choosing a Go package for these
+
+Compared from each package's source at the versions named, in October
+2026. Neither Go 1.27.1's standard library nor golang.org/x/crypto
+v0.58.0 has CCM, KMAC, AES-MMO, the Koblitz curves, ECQV, ECMQV or the
+brainpool curves; both have cSHAKE, on which KMAC is built. Check the
+projects themselves before relying on a row.
+
+| Need | this module | Other Go packages |
+|---|---|---|
+| AES-CCM with any nonce (7 to 13 bytes) and tag (4 to 16, even), as `cipher.AEAD` | `ccm`, no dependencies | pion/dtls/v3 v3.1.10 `pkg/crypto/ccm`: same range, inside the DTLS module (pion/logging, pion/transport). emmansun/gmsm v0.45.0 `cipher.NewCCMWithNonceAndTagSize`: same range, inside a ShangMi (SM2/SM3/SM4) suite |
+| KMAC128, KMAC256 | `kmac` | roseh.moe/pkg/kmac v1.1.0 (github.com/rhogenson/kmac): one-shot functions on crypto/sha3; its README advises against using it |
+| Zigbee AES-MMO hash | `aesmmo` | none found |
+| sect163k1, sect283k1 | `koblitz`, constant-time ladder | RyuaNerin/elliptic2 v1.3.0: both curves as `elliptic.Curve`; its README says it is not constant-time |
+| ECQV implicit certificates, ECMQV | `ecqv`, `ecmqv` (Smart Energy suites 1 and 2) | none found in Go |
+| brainpoolP256r1/P384r1/P512r1 | `brainpool`: constant-time, ECDSA, ECDH, X.509 certificates, PKCS #10 requests, PKCS #8 and SEC 1 keys | fabianmathias/gobrainpool v1.2.0: constant-time, ECDSA and ECDH, Wycheproof vectors, no X.509 or key encodings; it calls itself a hobby project. ProtonMail/go-crypto v1.5.2 `brainpool`: r1 and t1 curves as `elliptic.CurveParams` on math/big, which Go does not keep constant-time; no ECDSA or X.509 of its own |
+| SCRAM-SHA-1, SCRAM-SHA-256 | `sasl`, a two-step server and RFC 6120 failure names over xdg-go/scram | xdg-go/scram v1.2.0 (Apache-2.0) used directly: client and server conversations, SASLprep, channel binding (-PLUS) |
+
+Pick this module when one protocol needs several of these together,
+above all Zigbee Smart Energy key establishment (AES-MMO, the Koblitz
+curves, ECQV, ECMQV), which no other Go package found covers, or IEC
+62351 work that needs brainpool certificates and requests through
+crypto/x509. Pick pion/dtls's `ccm` if you already depend on pion, or
+gmsm's if you also need SM4-CCM. Pick gobrainpool for brainpool ECDSA and
+ECDH alone with an API in the style of crypto/ecdh. Use xdg-go/scram
+directly when you need SASLprep or channel binding.
+
 ## Install
 
 ```sh
