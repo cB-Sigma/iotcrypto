@@ -1,0 +1,101 @@
+iotcrypto (small cryptographic building blocks for IoT protocols, in Go)
+Copyright 2026 Abhinav Gautam
+
+This module is licensed under the Apache License, Version 2.0 (LICENSE),
+except where a file or package says otherwise. The exceptions are listed
+below. Each file keeps the copyright and licence header it carries; nothing
+here replaces a header.
+
+Packages and files under the BSD-3-Clause licence
+-------------------------------------------------
+
+ccm, brainpool and bigmod are also part of tlsx
+(github.com/cB-Abhinav-Gautam/tlsx), a fork of Go's crypto/tls under the
+BSD-3-Clause licence. In this module they keep that licence: each of the
+three directories has its own LICENSE file, Go's BSD-3-Clause text with
+"Copyright 2009 The Go Authors" and "Copyright 2026 Abhinav Gautam", and the
+file headers refer to it.
+
+| Material | Origin | Copyright and licence |
+|---|---|---|
+| bigmod/nat.go, bigmod/nat_noasm.go, bigmod/nat_test.go, bigmod/testdata | Go's crypto/internal/fips140/bigmod, copied with the import of the FIPS self-check removed, internal/byteorder replaced by encoding/binary, and the purego build constraint of nat_noasm.go dropped (only the generic code is used). Compared with Go 1.27.1 it also lacks SetBits and ShiftRightByOne (the Go release it was first copied from is not recorded) | The Go Authors, BSD-3-Clause (bigmod/LICENSE) |
+| bigmod/export.go | ours: exported wrappers of the unexported helpers | Copyright 2026 Abhinav Gautam, BSD-3-Clause (bigmod/LICENSE) |
+| ccm/slice.go | sliceForAppend, from Go's src/crypto/cipher/gcm.go, unchanged | The Go Authors, BSD-3-Clause (ccm/LICENSE) |
+| ccm/ccm.go, ccm/reference_test.go, ccm/testdata | ours | Copyright 2026 Abhinav Gautam, BSD-3-Clause (ccm/LICENSE) |
+| ccm/ccm_test.go | ours, with one helper adapted from Go (below) | Copyright 2026 Abhinav Gautam; Portions Copyright The Go Authors; BSD-3-Clause (ccm/LICENSE) |
+| brainpool/*.go (except example_test.go) | ours, with passages adapted from Go (below) | Copyright 2026 Abhinav Gautam; Portions Copyright The Go Authors where marked; BSD-3-Clause (brainpool/LICENSE) |
+| ccm/example_test.go, brainpool/example_test.go, bigmod/example_test.go | ours, added for this module | Copyright 2026 Abhinav Gautam, Apache-2.0 (as their headers say) |
+
+Go code adapted inside our own files. Each such file has the header line
+"Portions Copyright The Go Authors (BSD-3-Clause; see NOTICE)", and the
+passage itself is marked where it occurs:
+
+- brainpool/curve.go: the elliptic.Curve methods, modelled on nistCurve in
+  Go's src/crypto/elliptic/nistec.go.
+- brainpool/ecdsa.go: encodeSignature, addASN1IntBytes and parseSignature,
+  from Go's src/crypto/ecdsa/ecdsa.go.
+- brainpool/encoding.go: the ASN.1 structures publicKeyInfo, ecPrivateKey
+  and pkcs8, as in Go's src/crypto/x509 (x509.go, sec1.go, pkcs8.go).
+- ccm/ccm_test.go: unhex, like decodeHex in Go's
+  src/crypto/cipher/gcm_test.go.
+
+These passages are Copyright The Go Authors under the BSD-3-Clause licence
+(the text is in ccm/LICENSE, brainpool/LICENSE and bigmod/LICENSE). The Go
+project has not reviewed or endorsed this module.
+
+bigmod/testdata/mod_inv_tests.txt is byte for byte the file Go ships at
+src/crypto/internal/fips140/bigmod/testdata/mod_inv_tests.txt (checked
+against Go 1.26.2 on 2026-10-11), where it is distributed under Go's
+BSD-3-Clause licence. Neither the file (its header only describes the test
+vectors) nor Go's tests that read it name an earlier origin. Its layout
+matches BoringSSL's bignum test files, so it may have come from there; that
+has not been checked against BoringSSL's sources.
+
+Copyright holder of the module's own files
+------------------------------------------
+
+The files of aesmmo, koblitz, ecqv, ecmqv and kmac were written for SigmaM2M.
+Their copyright holder of record, Abhinav Gautam, released them under
+Apache-2.0 on 2026-10-05; each carries "Copyright 2026 Abhinav Gautam" and
+"SPDX-License-Identifier: Apache-2.0".
+sasl was written for SigmaM2M and moved here on 2026-10-06 under
+Apache-2.0, Copyright 2026 Abhinav Gautam; its files carry the same two
+header lines. Since 2026-10-06 scram.go wraps github.com/xdg-go/scram (below); no code
+of that library is copied. Files derived from Go keep Go's
+copyright and BSD-3-Clause licence as listed above.
+
+Trademarks
+----------
+
+Zigbee is a trademark of the Connectivity Standards Alliance. This module
+is not affiliated with, sponsored by or endorsed by the Connectivity
+Standards Alliance, and it is not a certified Zigbee product. The names of
+the Alliance's specifications (such as Zigbee Smart Energy and Base Device
+Behavior) are used only to say which published values and procedures the
+code follows. Other product and organisation names belong to their owners
+and are used only to describe compatibility.
+
+Published values and test vectors
+---------------------------------
+
+Values and test vectors from published standards are used as facts and
+cited where used; no standards text is reproduced. See PROVENANCE.md for
+the list. One expected CCM value in ccm/ccm_test.go and the values in
+ccm/testdata/reference.json were computed with the Python "cryptography"
+package's AESCCM as an independent implementation;
+some koblitz test keys were generated with OpenSSL.
+
+Dependencies (not vendored)
+---------------------------
+
+golang.org/x/crypto (cryptobyte, cryptobyte/asn1; used by brainpool)
+  BSD-3-Clause, Copyright The Go Authors.
+
+github.com/xdg-go/scram v1.2.0 (used by sasl)
+  Apache-2.0, Copyright David A. Golden.
+github.com/xdg-go/stringprep v1.0.4 (used by xdg-go/scram)
+  Apache-2.0, Copyright David A. Golden.
+golang.org/x/text (unicode/norm; used by xdg-go/stringprep)
+  BSD-3-Clause, Copyright The Go Authors.
+github.com/xdg-go/pbkdf2 is listed in go.mod by xdg-go/scram but not
+compiled with Go 1.24 or later (crypto/pbkdf2 is used instead).
