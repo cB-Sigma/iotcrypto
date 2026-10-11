@@ -10,6 +10,28 @@
 // keys or issuers are on these curves (crypto/x509 only knows the NIST
 // curves).
 //
+// # APIs
+//
+//   - Key agreement shaped like crypto/ecdh: ECDHP256r1 and friends return
+//     an *ECDHCurve with GenerateKey, NewPrivateKey and NewPublicKey; the
+//     keys have ECDH, Bytes, Equal and PublicKey. The functions
+//     GenerateECDHKey and ECDH do the same on byte slices.
+//   - Signatures shaped like crypto/ecdsa: public keys are *ecdsa.PublicKey
+//     on these curves; private keys are *PrivateKey (a crypto.Signer).
+//     SignASN1 and VerifyASN1 (DER), SignP1363 and VerifyP1363 (r || s),
+//     ParseRawPrivateKey, ParseUncompressedPublicKey and PublicKeyBytes
+//     mirror the standard library's names.
+//   - Encodings: SubjectPublicKeyInfo, SEC 1 and PKCS #8 keys, X.509
+//     certificates and PKCS #10 requests.
+//
+// Points are accepted uncompressed or compressed (SEC 1 2.3.4) wherever
+// they are parsed, except by ECDH and ParseUncompressedPublicKey, which
+// take the uncompressed form only, as TLS and the standard library do.
+//
+// The twisted t1 curves of RFC 5639 are not provided: none of the
+// protocols this module serves (TLS per RFC 7027 and RFC 8734, IEC 62351,
+// BSI TR-03109 smart metering) uses them.
+//
 // # Arithmetic
 //
 // Field and scalar arithmetic use the constant-time package
@@ -103,6 +125,7 @@ type curve struct {
 	p, n    *bigmod.Modulus
 	pMinus2 []byte // exponent for inversion mod p
 	nMinus2 []byte // exponent for inversion mod n
+	sqrtExp []byte // (p+1)/4, for square roots mod p
 	a, b3   *bigmod.Nat
 	b       *bigmod.Nat
 	one     *bigmod.Nat // 1 in Montgomery form
@@ -185,6 +208,10 @@ func newCurve(name string, oid asn1.ObjectIdentifier, ps, as, bs, gxs, gys, ns s
 	}
 	c.pMinus2 = new(big.Int).Sub(P, big.NewInt(2)).Bytes()
 	c.nMinus2 = new(big.Int).Sub(N, big.NewInt(2)).Bytes()
+	if P.Bit(0) != 1 || P.Bit(1) != 1 {
+		panic("brainpool: p is not 3 mod 4")
+	}
+	c.sqrtExp = new(big.Int).Rsh(new(big.Int).Add(P, big.NewInt(1)), 2).Bytes()
 	c.a = c.feFromBig(A)
 	c.b = c.feFromBig(B)
 	c.b3 = c.feFromBig(new(big.Int).Mod(new(big.Int).Mul(B, big.NewInt(3)), P))
@@ -237,16 +264,30 @@ func (c *curve) feBytes(a *bigmod.Nat) []byte {
 
 func (c *curve) feMul(out, a, b *bigmod.Nat) { out.MontgomeryMul(a, b, c.p) }
 
+// feAdd sets out = a + b; out may be a or b.
 func (c *curve) feAdd(out, a, b *bigmod.Nat) {
-	t := bigmod.NewNat().Set(a)
-	t.Add(b, c.p)
-	out.Set(t)
+	switch {
+	case out == a:
+		out.Add(b, c.p)
+	case out == b:
+		out.Add(a, c.p)
+	default:
+		out.Set(a).Add(b, c.p)
+	}
 }
 
+// feSub sets out = a - b; out may be a or b.
 func (c *curve) feSub(out, a, b *bigmod.Nat) {
-	t := bigmod.NewNat().Set(a)
-	t.Sub(b, c.p)
-	out.Set(t)
+	switch {
+	case out == a:
+		out.Sub(b, c.p)
+	case out == b:
+		t := bigmod.NewNat().Set(a)
+		t.Sub(b, c.p)
+		out.Set(t)
+	default:
+		out.Set(a).Sub(b, c.p)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -402,6 +443,57 @@ func (c *curve) pointFromUncompressed(b []byte) (*point, error) {
 		return nil, errors.New("brainpool: invalid uncompressed point encoding")
 	}
 	return c.pointFromAffine(b[1:1+c.size], b[1+c.size:])
+}
+
+// pointFromBytes parses an uncompressed (0x04 || X || Y) or compressed
+// (0x02 or 0x03 || X) point, SEC 1 v2.0 2.3.4. Public data only.
+func (c *curve) pointFromBytes(b []byte) (*point, error) {
+	if len(b) == 1+c.size && (b[0] == 2 || b[0] == 3) {
+		return c.decompress(b[1:], b[0] == 3)
+	}
+	return c.pointFromUncompressed(b)
+}
+
+// decompress recovers y from x: y = (x^3 + a*x + b)^((p+1)/4), a square
+// root because p = 3 mod 4 for every brainpool prime (checked in newCurve),
+// then the root of the requested parity.
+func (c *curve) decompress(xb []byte, odd bool) (*point, error) {
+	x, err := c.feFromBytes(xb)
+	if err != nil {
+		return nil, err
+	}
+	rhs := c.feNew()
+	c.feMul(rhs, x, x)
+	c.feAdd(rhs, rhs, c.a)
+	c.feMul(rhs, rhs, x)
+	c.feAdd(rhs, rhs, c.b)
+	plain := bigmod.NewNat().Set(rhs).FromMontgomery(c.p)
+	y := bigmod.NewNat().Exp(plain, c.sqrtExp, c.p)
+	yM := bigmod.NewNat().Set(y).ToMontgomery(c.p)
+	check := c.feNew()
+	c.feMul(check, yM, yM)
+	if check.Equal(rhs) != 1 {
+		return nil, errors.New("brainpool: compressed point not on curve")
+	}
+	yb := y.Bytes(c.p)
+	if (yb[len(yb)-1]&1 == 1) != odd {
+		if y.IsZero() == 1 {
+			return nil, errors.New("brainpool: invalid compressed point")
+		}
+		neg := bigmod.NewNat().ExpandFor(c.p)
+		neg.Sub(y, c.p)
+		yb = neg.Bytes(c.p)
+	}
+	return c.pointFromAffine(xb, yb)
+}
+
+// marshalCompressed returns 0x02 or 0x03 || X.
+func (c *curve) marshalCompressed(q *point) ([]byte, error) {
+	if c.isIdentity(q) == 1 {
+		return nil, errors.New("brainpool: point at infinity")
+	}
+	x, y := c.affine(q)
+	return append([]byte{2 | y[len(y)-1]&1}, x...), nil
 }
 
 func (c *curve) marshalPoint(q *point) ([]byte, error) {

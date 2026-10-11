@@ -171,8 +171,11 @@ func TestScramServerRefusals(t *testing.T) {
 	if _, _, err := s.Final([]byte(good)); condition(err) != "malformed-request" {
 		t.Errorf("final before first: %v", err)
 	}
-	if _, err := NewScramServer("SCRAM-SHA-512", pencil); condition(err) != "invalid-mechanism" {
-		t.Errorf("SHA-512: %v", err)
+	if _, err := NewScramServer("SCRAM-SHA3-512", pencil); condition(err) != "invalid-mechanism" {
+		t.Errorf("SHA3-512: %v", err)
+	}
+	if _, err := NewScramServer(SCRAMSHA256PLUS, pencil); err == nil {
+		t.Error("a -PLUS server without a channel binding was created")
 	}
 }
 
@@ -258,35 +261,53 @@ func TestScramClientRefusals(t *testing.T) {
 	}
 }
 
-// Passwords are used as given: no SASLprep on either side, so a password
-// that SASLprep would change still works between our client and server,
-// and one SASLprep would refuse is not refused.
-//
-// Covers: SIG-IPE-3627
-func TestScramNoSASLprep(t *testing.T) {
-	for _, pw := range []string{"I­X", "Ⅸ", "tab\there"} {
-		s, _ := NewScramServer(SCRAMSHA256, func(string) (string, bool) { return pw, true })
-		err := Client(SCRAMSHA256, "user", pw, func(msg []byte, last bool) ([]byte, error) {
-			if !last {
-				return s.First(msg)
-			}
-			_, fin, err := s.Final(msg)
-			return fin, err
-		})
-		if err != nil {
-			t.Errorf("%q: %v", pw, err)
-		}
+// exchangeWith runs our client against our server.
+func exchangeWith(t *testing.T, mech, stored, typed string, sopts, copts Options) error {
+	t.Helper()
+	s, err := NewScramServerWith(mech, func(string) (string, bool) { return stored, true }, sopts)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// And the prepared form of a password is a different password.
-	s, _ := NewScramServer(SCRAMSHA256, func(string) (string, bool) { return "I­X", true })
-	err := Client(SCRAMSHA256, "user", "IX", func(msg []byte, last bool) ([]byte, error) {
+	return ClientWith(mech, "user", typed, copts, func(msg []byte, last bool) ([]byte, error) {
 		if !last {
 			return s.First(msg)
 		}
 		_, fin, err := s.Final(msg)
 		return fin, err
 	})
-	if condition(err) != "not-authorized" {
+}
+
+// Passwords are prepared with SASLprep on both sides by default: a stored
+// password and its prepared form are the same password. Strings SASLprep
+// refuses are used as given and still work between our client and server.
+//
+// Covers: SIG-IPE-3627
+func TestScramSASLprep(t *testing.T) {
+	for _, c := range []struct{ stored, typed string }{
+		{"I­X", "IX"},              // soft hyphen mapped to nothing
+		{"Ⅸ", "IX"},                // ROMAN NUMERAL NINE, NFKC
+		{"a b", "a b"},             // no-break space mapped to space
+		{"tab\there", "tab\there"}, // prohibited: kept as given
+		{"­", "­"},                 // prepared to nothing: kept as given
+	} {
+		if err := exchangeWith(t, SCRAMSHA256, c.stored, c.typed, Options{}, Options{}); err != nil {
+			t.Errorf("stored %q, typed %q: %v", c.stored, c.typed, err)
+		}
+	}
+}
+
+// NoSASLprep uses passwords exactly as given (the v0.1 behaviour): the
+// prepared form of a password is then a different password.
+//
+// Covers: SIG-IPE-3627
+func TestScramNoSASLprep(t *testing.T) {
+	raw := Options{NoSASLprep: true}
+	for _, pw := range []string{"I­X", "Ⅸ", "tab\there"} {
+		if err := exchangeWith(t, SCRAMSHA256, pw, pw, raw, raw); err != nil {
+			t.Errorf("%q: %v", pw, err)
+		}
+	}
+	if err := exchangeWith(t, SCRAMSHA256, "I­X", "IX", raw, raw); condition(err) != "not-authorized" {
 		t.Errorf("prepared form: %v", err)
 	}
 }

@@ -36,3 +36,29 @@ func ExampleGenerateKey() {
 	// true
 	// true
 }
+
+// Key agreement with the API shaped like crypto/ecdh.
+func ExampleECDHCurve() {
+	curve := brainpool.ECDHP384r1()
+	alice, _ := curve.GenerateKey(rand.Reader)
+	bob, _ := curve.GenerateKey(rand.Reader)
+
+	// Bob receives Alice's public key as bytes (compressed here).
+	alicePub, err := curve.NewPublicKey(alice.PublicKey().CompressedBytes())
+	if err != nil {
+		panic(err)
+	}
+	s1, _ := bob.ECDH(alicePub)
+	s2, _ := alice.ECDH(bob.PublicKey())
+	fmt.Println(len(s1), bytes.Equal(s1, s2))
+	// Output: 48 true
+}
+
+// Signatures in the fixed-length r || s form used by JWS and COSE.
+func ExampleSignP1363() {
+	key, _ := brainpool.GenerateKey(brainpool.P256r1(), rand.Reader)
+	digest := sha256.Sum256([]byte("message"))
+	sig, _ := brainpool.SignP1363(rand.Reader, key, digest[:])
+	fmt.Println(len(sig), brainpool.VerifyP1363(key.PublicKey(), digest[:], sig))
+	// Output: 64 true
+}

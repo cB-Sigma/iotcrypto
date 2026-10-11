@@ -95,7 +95,9 @@ func publicKeyFromPoint(c *curve, b []byte) (*ecdsa.PublicKey, error) {
 }
 
 // ParsePKIXPublicKey parses a DER SubjectPublicKeyInfo holding an
-// id-ecPublicKey on a brainpool named curve (uncompressed point).
+// id-ecPublicKey on a brainpool named curve. The point may be uncompressed
+// or compressed (RFC 5480 2.2 allows both); explicit curve parameters are
+// refused.
 func ParsePKIXPublicKey(spki []byte) (*ecdsa.PublicKey, error) {
 	var info publicKeyInfo
 	rest, err := asn1.Unmarshal(spki, &info)
@@ -112,7 +114,7 @@ func ParsePKIXPublicKey(spki []byte) (*ecdsa.PublicKey, error) {
 	if info.PublicKey.BitLength != 8*len(info.PublicKey.Bytes) {
 		return nil, errors.New("brainpool: public key bit string not octet aligned")
 	}
-	return publicKeyFromPoint(c, info.PublicKey.Bytes)
+	return ParsePublicKey(c, info.PublicKey.Bytes)
 }
 
 // MarshalPKIXPublicKey returns the DER SubjectPublicKeyInfo of a brainpool
@@ -162,7 +164,7 @@ func parseECPrivateKey(named *curve, der []byte) (*PrivateKey, error) {
 		return nil, err
 	}
 	if len(k.PublicKey.Bytes) > 0 {
-		pub, err := publicKeyFromPoint(c, k.PublicKey.Bytes)
+		pub, err := ParsePublicKey(c, k.PublicKey.Bytes)
 		if err != nil {
 			return nil, err
 		}

@@ -6,13 +6,19 @@
 // encode_string(K), rate) || X || right_encode(L), L, "KMAC", S). Go's
 // standard library has cSHAKE but no KMAC; IEC 62351-4 E2E security
 // uses KMAC256 (kMACWithSHAKE256) as an integrity check value algorithm.
-// The XOF variant (clause 4.3.1, right_encode(0)) is not provided: IEC
-// 62351-4 fixes the output length.
+//
+// KMAC binds the output length into the computation, so a 32-byte tag is
+// not a prefix of a 64-byte one. The XOF variants KMACXOF128 and
+// KMACXOF256 (clause 4.3.1) encode a length of zero instead and give an
+// output of any length, read through io.Reader (XOF).
+//
+// Compare tags with crypto/hmac.Equal, which takes constant time.
 package kmac
 
 import (
 	"crypto/sha3"
 	"hash"
+	"io"
 )
 
 // rates of cSHAKE128 and cSHAKE256 in bytes.
@@ -123,4 +129,63 @@ func Sum128(k, x []byte, size int, s []byte) []byte {
 	m := New128(k, size, s)
 	m.Write(x)
 	return m.Sum(nil)
+}
+
+// XOF is KMACXOF128 or KMACXOF256 (SP 800-185 4.3.1): write the data, then
+// read as many output bytes as needed. Reading ends the input; a Write after
+// the first Read panics, as with crypto/sha3's SHAKE.
+type XOF struct {
+	m       *KMAC
+	reading bool
+}
+
+var _ io.ReadWriter = (*XOF)(nil)
+
+// NewXOF128 returns KMACXOF128 with key k and customization string s.
+func NewXOF128(k, s []byte) *XOF { return &XOF{m: newKMAC(k, 0, s, false)} }
+
+// NewXOF256 returns KMACXOF256 with key k and customization string s.
+func NewXOF256(k, s []byte) *XOF { return &XOF{m: newKMAC(k, 0, s, true)} }
+
+// Write absorbs data; it never fails. It panics after Read.
+func (x *XOF) Write(p []byte) (int, error) {
+	if x.reading {
+		panic("kmac: Write after Read")
+	}
+	return x.m.sh.Write(p)
+}
+
+// Read fills p with the next output bytes; it never fails.
+func (x *XOF) Read(p []byte) (int, error) {
+	if !x.reading {
+		x.m.sh.Write(rightEncode(0))
+		x.reading = true
+	}
+	return x.m.sh.Read(p)
+}
+
+// Reset starts a new computation with the same key and customization.
+func (x *XOF) Reset() {
+	x.m.Reset()
+	x.reading = false
+}
+
+// BlockSize is the rate of the underlying cSHAKE.
+func (x *XOF) BlockSize() int { return x.m.rate }
+
+// SumXOF128 returns the first size bytes of KMACXOF128(k, x, s).
+func SumXOF128(k, x []byte, size int, s []byte) []byte {
+	return sumXOF(NewXOF128(k, s), x, size)
+}
+
+// SumXOF256 returns the first size bytes of KMACXOF256(k, x, s).
+func SumXOF256(k, x []byte, size int, s []byte) []byte {
+	return sumXOF(NewXOF256(k, s), x, size)
+}
+
+func sumXOF(m *XOF, x []byte, size int) []byte {
+	m.Write(x)
+	out := make([]byte, size)
+	m.Read(out)
+	return out
 }

@@ -10,7 +10,7 @@ Packages and files under the BSD-3-Clause licence
 -------------------------------------------------
 
 ccm, brainpool and bigmod are also part of tlsx
-(github.com/cB-Abhinav-Gautam/tlsx), a fork of Go's crypto/tls under the
+(github.com/cB-Sigma/tlsx), a fork of Go's crypto/tls under the
 BSD-3-Clause licence. In this module they keep that licence: each of the
 three directories has its own LICENSE file, Go's BSD-3-Clause text with
 "Copyright 2009 The Go Authors" and "Copyright 2026 Abhinav Gautam", and the
@@ -21,7 +21,7 @@ file headers refer to it.
 | bigmod/nat.go, bigmod/nat_noasm.go, bigmod/nat_test.go, bigmod/testdata | Go's crypto/internal/fips140/bigmod, copied with the import of the FIPS self-check removed, internal/byteorder replaced by encoding/binary, and the purego build constraint of nat_noasm.go dropped (only the generic code is used). Compared with Go 1.27.1 it also lacks SetBits and ShiftRightByOne (the Go release it was first copied from is not recorded) | The Go Authors, BSD-3-Clause (bigmod/LICENSE) |
 | bigmod/export.go | ours: exported wrappers of the unexported helpers | Copyright 2026 Abhinav Gautam, BSD-3-Clause (bigmod/LICENSE) |
 | ccm/slice.go | sliceForAppend, from Go's src/crypto/cipher/gcm.go, unchanged | The Go Authors, BSD-3-Clause (ccm/LICENSE) |
-| ccm/ccm.go, ccm/reference_test.go, ccm/testdata | ours | Copyright 2026 Abhinav Gautam, BSD-3-Clause (ccm/LICENSE) |
+| ccm/ccm.go, ccm/reference_test.go, ccm/wycheproof_test.go, ccm/fuzz_test.go, ccm/testdata (except testdata/wycheproof, below) | ours | Copyright 2026 Abhinav Gautam, BSD-3-Clause (ccm/LICENSE) |
 | ccm/ccm_test.go | ours, with one helper adapted from Go (below) | Copyright 2026 Abhinav Gautam; Portions Copyright The Go Authors; BSD-3-Clause (ccm/LICENSE) |
 | brainpool/*.go (except example_test.go) | ours, with passages adapted from Go (below) | Copyright 2026 Abhinav Gautam; Portions Copyright The Go Authors where marked; BSD-3-Clause (brainpool/LICENSE) |
 | ccm/example_test.go, brainpool/example_test.go, bigmod/example_test.go | ours, added for this module | Copyright 2026 Abhinav Gautam, Apache-2.0 (as their headers say) |
@@ -61,7 +61,7 @@ Apache-2.0 on 2026-10-05; each carries "Copyright 2026 Abhinav Gautam" and
 sasl was written for SigmaM2M and moved here on 2026-10-06 under
 Apache-2.0, Copyright 2026 Abhinav Gautam; its files carry the same two
 header lines. Since 2026-10-06 scram.go wraps github.com/xdg-go/scram (below); no code
-of that library is copied. Files derived from Go keep Go's
+of that library is copied. binding.go (v0.2.0) is ours. Files derived from Go keep Go's
 copyright and BSD-3-Clause licence as listed above.
 
 Trademarks
@@ -75,6 +75,18 @@ Behavior) are used only to say which published values and procedures the
 code follows. Other product and organisation names belong to their owners
 and are used only to describe compatibility.
 
+Project Wycheproof test vectors
+-------------------------------
+
+The files under ccm/testdata/wycheproof, kmac/testdata/wycheproof and
+brainpool/testdata/wycheproof are test vector files of Project Wycheproof
+(https://github.com/C2SP/wycheproof, testvectors_v1, commit
+12fd3aaf33eb5fa1f52e026912ee00c054f9d984), compressed with gzip and
+otherwise unchanged. They are Copyright Google LLC and the Wycheproof
+contributors, licensed under the Apache License, Version 2.0 (the text is
+in LICENSE). They keep that licence wherever they sit, including inside the
+BSD-3-Clause directories ccm and brainpool. They are used only by tests.
+
 Published values and test vectors
 ---------------------------------
 
@@ -83,7 +95,9 @@ cited where used; no standards text is reproduced. See PROVENANCE.md for
 the list. One expected CCM value in ccm/ccm_test.go and the values in
 ccm/testdata/reference.json were computed with the Python "cryptography"
 package's AESCCM as an independent implementation;
-some koblitz test keys were generated with OpenSSL.
+some koblitz test keys were generated with OpenSSL; the SCRAM-SHA-512 and
+-PLUS exchanges in sasl/plus_test.go were computed with Python's hashlib
+and hmac.
 
 Dependencies (not vendored)
 ---------------------------
@@ -93,7 +107,8 @@ golang.org/x/crypto (cryptobyte, cryptobyte/asn1; used by brainpool)
 
 github.com/xdg-go/scram v1.2.0 (used by sasl)
   Apache-2.0, Copyright David A. Golden.
-github.com/xdg-go/stringprep v1.0.4 (used by xdg-go/scram)
+github.com/xdg-go/stringprep v1.0.4 (SASLprep; used by sasl and by
+xdg-go/scram)
   Apache-2.0, Copyright David A. Golden.
 golang.org/x/text (unicode/norm; used by xdg-go/stringprep)
   BSD-3-Clause, Copyright The Go Authors.

@@ -24,3 +24,17 @@ func ExampleSum256() {
 	// 32
 	// true
 }
+
+// KMACXOF256 as a key-derivation source: read two keys of different
+// lengths from one output stream.
+func ExampleNewXOF256() {
+	x := kmac.NewXOF256([]byte("a key of any length"), []byte("key schedule"))
+	x.Write([]byte("context"))
+	encKey := make([]byte, 16)
+	macKey := make([]byte, 32)
+	x.Read(encKey)
+	x.Read(macKey)
+	fmt.Println(len(encKey), len(macKey))
+	// Output:
+	// 16 32
+}
